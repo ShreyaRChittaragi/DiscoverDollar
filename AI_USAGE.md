@@ -16,14 +16,15 @@ The tools were used as development assistance. The project was reviewed and test
 - A distinct claim and manager-approval workflow: claiming a shift does not immediately reassign it.
 - Revalidation of relevant scheduling rules at approval time.
 - Structured refusal responses with reasons, and an action history that records successful and refused actions.
-- The additional user-facing features documented in `README.md`: weekly-hours projections, manager-only staff creation, filters, CSV export, the time-of-day strip, responsive layouts, and the acting-as demo selector.
+- The additional user-facing features documented in `README.md`: weekly-hours projections, manager-only staff creation, manager-only history clearing, filters, CSV export, the time-of-day strip, responsive layouts, and the acting-as demo selector.
 - SQLite-based persistence and a one-time migration path from older JSON state, as implemented in the final project version.
 
 ## What was changed or refined
 
 - The requirements and assumptions were made explicit, including certification checks, shift overlap, the minimum 11-hour rest period, the 40-hour weekly cap, and approval-time revalidation.
 - The UI was refined toward a responsive teal-and-white dashboard with clearer statuses, filters, summary information, and manager actions.
-- The API/frontend contract was reviewed for endpoint paths, request methods, actor IDs, and projected weekly-hours data.
+- The API/frontend contract was reviewed for endpoint paths, request methods, actor IDs, and projected weekly-hours data. `POST /api/staff` supports manager-only staff creation; `POST /api/history/clear` supports manager-only history clearing; `GET /api/me/{id}` returns weekly hours; and the open-listings endpoint includes hours now and projected hours after a claim.
+- **Product decision made by the developer:** add a manager-only Clear History control as a red button on the history card, require explicit confirmation, and never clear history automatically. The clear operation leaves an audit entry stating who cleared the history and how many entries were removed. This decision was made to balance history maintenance with accountability, rather than silently deleting the audit trail.
 - The persistence approach evolved from an earlier JSON-file implementation to SQLite in the described final version. The README should match the code that is actually submitted.
 - Documentation and local/deployment run instructions were revised to make setup and limitations clearer.
 
@@ -33,7 +34,7 @@ The tools were used as development assistance. The project was reviewed and test
 - The frontend was not treated as the authority for business-rule enforcement; the backend must validate each write request.
 - A claim was not treated as an immediate reassignment. Manager approval and approval-time revalidation remain separate steps.
 - The app was not presented as production-ready. Real deployment would require real authentication, durable hosted storage, stronger authorization, and concurrency testing.
-- Suggestions that would add unnecessary complexity during the time-limited hackathon were weighed against the requirement to finish a working prototype.
+- Suggestions that would add unnecessary complexity during the time-limited hackathon were weighed against the requirement to finish a working prototype. The explicit, auditable Clear History behavior was intentionally selected as a focused manager feature.
 
 ## Verification performed
 
