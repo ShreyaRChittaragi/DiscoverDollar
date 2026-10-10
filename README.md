@@ -26,6 +26,7 @@ The central design principle is that **a claim is not an assignment**. A shift r
 ### Additional features
 - **Weekly-hours meter:** Shows assigned hours out of 40 and the projected hours after claiming an open shift.
 - **Manager-only Add Person:** Adds a staff member or manager, supports certifications, rejects duplicate names, and logs the action.
+- **Manager-only Clear History:** A red button on the history card asks for confirmation before clearing. It never runs automatically. After clearing, the history retains a new audit entry identifying who performed the action and how many entries were removed. This was a deliberate product decision to make history cleanup explicit and accountable rather than silently erasing the audit trail.
 - **Available-shift filters:** Filter by certification, day, and claimable-only status.
 - **History CSV export:** Exports the history currently shown in the interface.
 - **Time-of-day strip:** Visually marks morning, evening, and night shifts, including overnight shifts.
@@ -115,6 +116,7 @@ All write requests identify the demo actor with `actor_id`. This is for the no-l
 | `POST` | `/api/listings/{id}/approve` | Approve a valid claim |
 | `POST` | `/api/listings/{id}/reject` | Reject a pending claim |
 | `POST` | `/api/staff` | Add a person (manager only) |
+| `POST` | `/api/history/clear` | Clear history after explicit confirmation (manager only), then record who cleared it and how many entries were removed |
 
 Rule refusals use structured error details that include a code, message, and applicable violations. The API's `/docs` page can be used to inspect request and response schemas.
 
@@ -133,6 +135,7 @@ For a hosted deployment, ensure the SQLite database is stored on persistent stor
 3. A claim remains pending until a manager approves it.
 4. Approval rechecks the relevant scheduling rules against current assignments.
 5. The application records refused attempts as well as successful actions to make outcomes explainable.
+6. History clearing is a deliberate manager action: the UI asks for confirmation, the operation is never automatic, and the resulting audit entry records the actor and number of entries removed. This preserves accountability even when older history is cleared.
 6. The app is a hackathon prototype, not a production clinical staffing system. Production use would require authenticated identities, stronger authorization, durable database hosting, concurrency testing, and deployment hardening.
 
 ## Deployment
