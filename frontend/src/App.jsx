@@ -15,9 +15,20 @@ const Icon = ({ n }) => <svg viewBox="0 0 24 24" width="18" height="18" fill="no
 const Badge = ({ kind, children }) => <span className={"badge " + kind}>{children}</span>;
 const Cert = ({ c }) => (c ? <Badge kind="info">{c}</Badge> : <span className="muted">none</span>);
 const Reasons = ({ list }) => <ul className="reasons">{list.map((v, i) => <li key={i}>{v.message}</li>)}</ul>;
-const When = ({ s }) => (
-  <div className="when"><div>{dayLabel(s.start.slice(0, 10))}</div><small>{s.start.slice(11)} – {s.end.slice(11)}{s.end.slice(0, 10) !== s.start.slice(0, 10) ? " (+1 day)" : ""}</small></div>
-);
+const mins = (t) => +t.slice(11, 13) * 60 + +t.slice(14, 16);
+const kindOf = (h) => (h >= 5 && h < 13 ? ["morning", "Morning"] : h >= 13 && h < 21 ? ["evening", "Evening"] : ["night", "Night"]);
+function When({ s }) {
+  const a = mins(s.start), b = mins(s.end), cross = s.end.slice(0, 10) !== s.start.slice(0, 10);
+  const [k, name] = kindOf(Math.floor(a / 60));
+  const segs = cross ? [[a, 1440], [0, b]] : [[a, b]];
+  return (
+    <div className="when" title={name + " shift"}>
+      <div>{dayLabel(s.start.slice(0, 10))}</div>
+      <div className={"strip " + k} aria-hidden="true">{segs.map(([x, y], i) => <i key={i} style={{ left: (x / 1440) * 100 + "%", width: ((y - x) / 1440) * 100 + "%" }} />)}</div>
+      <small><span className={"kind " + k} />{s.start.slice(11)} – {s.end.slice(11)}{cross ? " (+1 day)" : ""}</small>
+    </div>
+  );
+}
 
 function Card({ id, title, count, unit, tone = "blue", right, children }) {
   return (
@@ -99,7 +110,7 @@ function History({ items }) {
         {rows.map((h) => (
           <tr key={h.id}>
             <td className="nw">{h.at.replace("T", " ")}</td><td>{h.actor_name}</td><td>{h.action}</td><td className="id">{h.shift_id || ""}</td>
-            <td>{h.outcome === "SUCCESS" ? <Badge kind="ok">✓ SUCCESS</Badge> : <Badge kind="err">✕ REFUSED</Badge>}</td>
+            <td>{h.outcome === "SUCCESS" ? <Badge kind="ok">Success</Badge> : <Badge kind="err">Refused</Badge>}</td>
             <td className="wrap muted">{h.detail}</td>
           </tr>
         ))}
@@ -165,7 +176,7 @@ export default function App() {
   return (
     <>
       <header className="top">
-        <div className="brand"><span className="mark">⇄</span><b>ShiftSwap</b><small>CityCare Clinic</small></div>
+        <div className="brand"><span className="mark"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg></span><b>ShiftSwap</b><small>CityCare Clinic</small></div>
         <label className="who"><span>Acting as</span>
           <span className="sel"><Icon n="user" />
             <select value={actorId} onChange={(e) => pick(e.target.value)} aria-label="Acting as">
@@ -186,14 +197,24 @@ export default function App() {
           <div className="hero">
             <div className="banner">
               {actor ? <><h1>Welcome, <em>{actor.name.split(" ")[0]}</em></h1><p>{isMgr ? "Manager" : "Staff"} • CityCare Clinic{!isMgr && actor.certifications.length ? " • " + actor.certifications.join(", ") : ""}</p></>
-                : <><h1>Welcome to <em>ShiftSwap</em></h1><p>Choose who you are acting as, top right.</p></>}
+                : <><h1>Welcome to <em>ShiftSwap</em></h1><p>Pick a person below to see the roster from their side.</p></>}
             </div>
             {actor && <div className="tiles">{tiles.map(([t, i, v, l]) => <Tile key={l} tone={t} icon={i} value={v} label={l} />)}</div>}
           </div>
 
+          {!actor && staff.length > 0 && (
+            <Card id="pick" title="Who are you acting as?">
+              <div className="picker">{staff.map((p) => (
+                <button key={p.id} className={"person" + (p.role === "MANAGER" ? " mgr" : "")} onClick={() => pick(p.id)}>
+                  <span className="av">{p.name[0]}</span><b>{p.name}</b>
+                  <small>{p.role === "MANAGER" ? "Manager" : p.certifications.join(", ") || "Staff"}</small>
+                </button>))}</div>
+            </Card>
+          )}
+
           {msg && (
             <div className={"alert " + (msg.ok ? "ok" : "err")} role={msg.ok ? "status" : "alert"}>
-              <div><b>{msg.ok ? "✓ " : "✕ "}{msg.message}</b>{msg.violations && msg.violations.length > 0 && <Reasons list={msg.violations} />}</div>
+              <div><b>{msg.message}</b>{msg.violations && msg.violations.length > 0 && <Reasons list={msg.violations} />}</div>
               <button className="x" onClick={() => setMsg(null)} aria-label="Dismiss message">×</button>
             </div>
           )}
@@ -211,7 +232,7 @@ export default function App() {
                     {me.shifts.map((s) => (
                       <tr key={s.id}>
                         <td className="id">{s.id}</td><td><When s={s} /></td><td><Cert c={s.required_certification} /></td>
-                        <td>{!s.listing ? <span className="muted">Not listed</span> : s.listing.status === "OPEN" ? <Badge kind="info">● OPEN</Badge> : <Badge kind="warn">◐ Claimed by {s.listing.claimed_by_name}</Badge>}</td>
+                        <td>{!s.listing ? <span className="muted">Not listed</span> : s.listing.status === "OPEN" ? <Badge kind="info">Open</Badge> : <Badge kind="warn">Claimed by {s.listing.claimed_by_name}</Badge>}</td>
                         <td className="r">
                           {!s.listing && <button onClick={() => act(() => api.post(actor.id, s.id), `Posted ${s.id} for swap`)}>Post for swap</button>}
                           {s.listing && s.listing.status === "OPEN" && <button className="ghost" onClick={() => act(() => api.withdraw(actor.id, s.listing.id), `Withdrew ${s.id}`)}>Withdraw</button>}
@@ -232,7 +253,7 @@ export default function App() {
                     {shown.map((l) => (
                       <tr key={l.id} className={l.can_claim ? "" : "bad"}>
                         <td className="id">{l.shift.id}</td><td><When s={l.shift} /></td><td><Cert c={l.shift.required_certification} /></td><td>{l.poster_name}</td>
-                        <td className="wrap">{l.can_claim ? <Badge kind="ok">✓ Yes</Badge> : <><Badge kind="err">✕ No</Badge><Reasons list={l.reasons} /></>}<p className="hrs">Week of {dayLabel(l.week_start)}: {fh(l.hours_now)}h → {fh(l.hours_after)}h of 40h</p></td>
+                        <td className="wrap">{l.can_claim ? <Badge kind="ok">Yes</Badge> : <><Badge kind="err">No</Badge><Reasons list={l.reasons} /></>}<p className="hrs">Week of {dayLabel(l.week_start)}: {fh(l.hours_now)}h → {fh(l.hours_after)}h of 40h</p></td>
                         <td className="r"><button disabled={!l.can_claim} onClick={() => act(() => api.claim(actor.id, l.id), `Claimed ${l.shift.id}. Waiting for manager approval.`)}>Claim</button></td>
                       </tr>
                     ))}
@@ -246,7 +267,7 @@ export default function App() {
                   {me.claims.map((l) => (
                     <tr key={l.id}>
                       <td className="id">{l.shift.id}</td><td><When s={l.shift} /></td><td><Cert c={l.shift.required_certification} /></td><td>{l.poster_name}</td>
-                      <td><Badge kind="warn">◐ Awaiting manager approval</Badge></td>
+                      <td><Badge kind="warn">Awaiting approval</Badge></td>
                       <td className="r"><button className="ghost" onClick={() => act(() => api.unclaim(actor.id, l.id), `Unclaimed ${l.shift.id}`)}>Unclaim</button></td>
                     </tr>
                   ))}
@@ -261,7 +282,7 @@ export default function App() {
                 {queue.map((l) => (
                   <tr key={l.id} className={l.can_approve ? "" : "bad"}>
                     <td className="id">{l.shift.id}</td><td><When s={l.shift} /></td><td><Cert c={l.shift.required_certification} /></td><td>{l.poster_name}</td><td>{l.claimed_by_name}</td>
-                    <td className="wrap">{l.can_approve ? <Badge kind="ok">✓ Rules pass</Badge> : <><Badge kind="err">✕ Would be refused</Badge><Reasons list={l.reasons} /></>}</td>
+                    <td className="wrap">{l.can_approve ? <Badge kind="ok">Rules pass</Badge> : <><Badge kind="err">Would be refused</Badge><Reasons list={l.reasons} /></>}</td>
                     <td className="r acts">
                       <button disabled={!l.can_approve} title={l.can_approve ? "" : "A rule currently fails for this claim"} onClick={() => act(() => api.approve(actor.id, l.id), `Approved ${l.shift.id}`)}>Approve</button>
                       <button className="ghost" onClick={() => act(() => api.reject(actor.id, l.id), `Rejected claim on ${l.shift.id}`)}>Reject</button>
