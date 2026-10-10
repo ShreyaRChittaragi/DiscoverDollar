@@ -36,12 +36,65 @@ function Tbl({ head, count, empty, children }) {
 
 const Tile = ({ tone, icon, value, label }) => <div className={"tile " + tone}><span className="ti"><Icon n={icon} /></span><b>{value}</b><span>{label}</span></div>;
 
+const fh = (n) => Number(n.toFixed(2));
+
+const exportCsv = (rows) => {
+  const esc = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+  const lines = [["Time", "Who", "Action", "Shift", "Outcome", "Details"].map(esc).join(",")]
+    .concat(rows.map((h) => [h.at, h.actor_name, h.action, h.shift_id, h.outcome, h.detail].map(esc).join(",")));
+  const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = "shiftswap-history.csv"; a.click();
+  URL.revokeObjectURL(url);
+};
+
+function Meter({ label, hours }) {
+  return (
+    <div className="meter">
+      <div className="meter-h"><span>{label}</span><b>{fh(hours)} / 40h</b></div>
+      <div className="bar" role="progressbar" aria-label={label} aria-valuenow={fh(hours)} aria-valuemin="0" aria-valuemax="40">
+        <i className={hours > 40 ? "over" : hours === 40 ? "full" : ""} style={{ width: Math.min(100, (hours / 40) * 100) + "%" }} />
+      </div>
+    </div>
+  );
+}
+
+function People({ staff, onAdd }) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("STAFF");
+  const [certs, setCerts] = useState("");
+  const submit = async (e) => {
+    e.preventDefault();
+    const list = role === "MANAGER" ? [] : certs.split(",").map((c) => c.trim()).filter(Boolean);
+    if (await onAdd(name.trim(), role, list)) { setName(""); setRole("STAFF"); setCerts(""); }
+  };
+  return (
+    <Card id="people" title="People" count={staff.length} unit="people" tone="blue">
+      <form className="addform" onSubmit={submit}>
+        <label>Name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kavya" required maxLength={60} /></label>
+        <label>Role<select value={role} onChange={(e) => setRole(e.target.value)}><option value="STAFF">Staff</option><option value="MANAGER">Manager</option></select></label>
+        <label>Certifications<input value={certs} onChange={(e) => setCerts(e.target.value)} placeholder="ICU, PEDS (optional)" disabled={role === "MANAGER"} /></label>
+        <button type="submit">Add person</button>
+      </form>
+      <Tbl head={["ID", "Name", "Role", "Certifications"]} count={staff.length} empty="">
+        {staff.map((p) => (
+          <tr key={p.id}>
+            <td className="id">{p.id}</td><td>{p.name}</td>
+            <td><Badge kind={p.role === "MANAGER" ? "warn" : "info"}>{p.role === "MANAGER" ? "Manager" : "Staff"}</Badge></td>
+            <td>{p.certifications.length ? p.certifications.map((c) => <Badge key={c} kind="info">{c}</Badge>) : <span className="muted">none</span>}</td>
+          </tr>
+        ))}
+      </Tbl>
+    </Card>
+  );
+}
+
 function History({ items }) {
   const [f, setF] = useState("all");
   const rows = f === "refused" ? items.filter((h) => h.outcome === "REFUSED") : items;
   return (
     <Card id="history" title="Action history" count={rows.length} unit="actions" tone="purple"
-      right={<label className="filter">Filter <select value={f} onChange={(e) => setF(e.target.value)}><option value="all">All actions</option><option value="refused">Refused only</option></select></label>}>
+      right={<div className="tools"><button className="ghost sm" onClick={() => exportCsv(rows)} disabled={!rows.length}>Export CSV</button><label className="filter">Filter <select value={f} onChange={(e) => setF(e.target.value)}><option value="all">All actions</option><option value="refused">Refused only</option></select></label></div>}>
       <Tbl head={["Time", "Who", "Action", "Shift", "Outcome", "Details"]} count={rows.length} empty="No actions to show yet.">
         {rows.map((h) => (
           <tr key={h.id}>
@@ -58,12 +111,15 @@ function History({ items }) {
 export default function App() {
   const [staff, setStaff] = useState([]);
   const [actorId, setActorId] = useState(localStorage.getItem("shiftswap.actor") || "");
-  const [me, setMe] = useState({ shifts: [], claims: [] });
+  const [me, setMe] = useState({ shifts: [], claims: [], weeks: [] });
   const [open, setOpen] = useState([]);
   const [queue, setQueue] = useState([]);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState(null);
   const [active, setActive] = useState("");
+  const [fCert, setFCert] = useState("all");
+  const [fDay, setFDay] = useState("all");
+  const [fOk, setFOk] = useState(false);
 
   const actor = staff.find((p) => p.id === actorId);
   const isMgr = !!actor && actor.role === "MANAGER";
@@ -84,15 +140,22 @@ export default function App() {
   useEffect(() => { if (msg && msg.ok) { const t = setTimeout(() => setMsg(null), 4500); return () => clearTimeout(t); } }, [msg]);
 
   const act = async (fn, okMessage) => {
-    try { await fn(); setMsg({ ok: true, message: okMessage }); }
+    let ok = false;
+    try { await fn(); setMsg({ ok: true, message: okMessage }); ok = true; }
     catch (e) { setMsg({ ok: false, message: e.message || "Action failed", violations: e.violations || [] }); }
     refresh();
+    return ok;
   };
+  const addPerson = (name, role, certs) => act(async () => { await api.addPerson(actor.id, name, role, certs); setStaff(await api.staff()); }, `Added ${name}`);
   const pick = (id) => { setActorId(id); localStorage.setItem("shiftswap.actor", id); setMsg(null); setActive(""); };
   const go = (k) => { setActive(k); const el = document.getElementById(k); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
+  const certOpts = [...new Set(open.map((l) => l.shift.required_certification || "none"))];
+  const dayOpts = [...new Set(open.map((l) => l.shift.start.slice(0, 10)))].sort();
+  const shown = open.filter((l) => (fCert === "all" || (l.shift.required_certification || "none") === fCert) && (fDay === "all" || l.shift.start.slice(0, 10) === fDay) && (!fOk || l.can_claim));
+
   const nav = !actor ? [] : isMgr
-    ? [["queue", "Manager Approvals", "users"], ["history", "History", "clock"]]
+    ? [["queue", "Manager Approvals", "users"], ["people", "People", "user"], ["history", "History", "clock"]]
     : [["shifts", "My Shifts", "cal"], ["open", "Available Shifts", "search"], ["claims", "My Claims", "file"], ["history", "History", "clock"]];
 
   const tiles = !actor ? [] : isMgr
@@ -137,6 +200,11 @@ export default function App() {
 
           {actor && !isMgr && (
             <>
+              <Card id="hours" title="My weekly hours">
+                <p className="note">Assigned shifts only, maximum 40h per week. Pending claims do not count until approved.</p>
+                <div className="meters">{(me.weeks || []).map((w) => <Meter key={w.week_start} label={"Week of " + dayLabel(w.week_start)} hours={w.hours} />)}</div>
+              </Card>
+
               <div className="two">
                 <Card id="shifts" title="My shifts" count={me.shifts.length} unit="shifts" tone="blue">
                   <Tbl head={["Shift", "When", "Certification", "Listing", ""]} count={me.shifts.length} empty="You have no shifts on the roster.">
@@ -154,12 +222,17 @@ export default function App() {
                   </Tbl>
                 </Card>
 
-                <Card id="open" title="Open listings from colleagues" count={open.length} unit={open.length === 1 ? "listing" : "listings"} tone="green">
-                  <Tbl head={["Shift", "When", "Certification", "Posted by", "Can you claim it?", ""]} count={open.length} empty="No colleague has a shift up for swap right now.">
-                    {open.map((l) => (
+                <Card id="open" title="Open listings from colleagues" count={shown.length} unit={shown.length === 1 ? "listing" : "listings"} tone="green">
+                  <div className="filters">
+                    <label>Certification<select value={fCert} onChange={(e) => setFCert(e.target.value)}><option value="all">All</option>{certOpts.map((c) => <option key={c} value={c}>{c === "none" ? "No certification" : c}</option>)}</select></label>
+                    <label>Day<select value={fDay} onChange={(e) => setFDay(e.target.value)}><option value="all">All days</option>{dayOpts.map((d) => <option key={d} value={d}>{dayLabel(d)}</option>)}</select></label>
+                    <label className="chk"><input type="checkbox" checked={fOk} onChange={(e) => setFOk(e.target.checked)} />Claimable only</label>
+                  </div>
+                  <Tbl head={["Shift", "When", "Certification", "Posted by", "Can you claim it?", ""]} count={shown.length} empty={open.length ? "No listings match your filters." : "No colleague has a shift up for swap right now."}>
+                    {shown.map((l) => (
                       <tr key={l.id} className={l.can_claim ? "" : "bad"}>
                         <td className="id">{l.shift.id}</td><td><When s={l.shift} /></td><td><Cert c={l.shift.required_certification} /></td><td>{l.poster_name}</td>
-                        <td className="wrap">{l.can_claim ? <Badge kind="ok">✓ Yes</Badge> : <><Badge kind="err">✕ No</Badge><Reasons list={l.reasons} /></>}</td>
+                        <td className="wrap">{l.can_claim ? <Badge kind="ok">✓ Yes</Badge> : <><Badge kind="err">✕ No</Badge><Reasons list={l.reasons} /></>}<p className="hrs">Week of {dayLabel(l.week_start)}: {fh(l.hours_now)}h → {fh(l.hours_after)}h of 40h</p></td>
                         <td className="r"><button disabled={!l.can_claim} onClick={() => act(() => api.claim(actor.id, l.id), `Claimed ${l.shift.id}. Waiting for manager approval.`)}>Claim</button></td>
                       </tr>
                     ))}
@@ -198,6 +271,8 @@ export default function App() {
               </Tbl>
             </Card>
           )}
+
+          {isMgr && <People staff={staff} onAdd={addPerson} />}
 
           <History items={history} />
         </main>

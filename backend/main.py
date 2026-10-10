@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from rules import check_claim
+from rules import check_claim, duration, week_start
 from store import LOCK, Store
 
 app = FastAPI(title="ShiftSwap")
@@ -49,6 +49,21 @@ def name_of(pid) -> Optional[str]:
 
 def shifts_of(pid):
     return [s for s in S["shifts"] if s["assigned_to"] == pid]
+
+
+def week_hours(pid):
+    """Hours per week (key = Monday date) for shifts currently assigned to pid."""
+    out = {}
+    for s in shifts_of(pid):
+        k = week_start(s).date().isoformat()
+        out[k] = out.get(k, 0) + duration(s).total_seconds() / 3600
+    return out
+
+
+def new_person_id(role):
+    p = "S" if role == "STAFF" else "M"
+    nums = [int(x["id"][1:]) for x in S["staff"] if x["id"].startswith(p) and x["id"][1:].isdigit()]
+    return f"{p}{max(nums, default=0) + 1}"
 
 
 def active_listing(shift_id):
@@ -105,7 +120,7 @@ def me(staff_id: str):
     with LOCK:
         actor = get_actor(staff_id)
         if actor["role"] != "STAFF":
-            return {"shifts": [], "claims": []}
+            return {"shifts": [], "claims": [], "weeks": []}
         mine = []
         for s in sorted(shifts_of(staff_id), key=lambda s: s["start"]):
             l = active_listing(s["id"])
@@ -113,7 +128,8 @@ def me(staff_id: str):
                 "id": l["id"], "status": l["status"], "claimed_by": l["claimed_by"],
                 "claimed_by_name": name_of(l["claimed_by"])}})
         claims = [listing_view(l) for l in S["listings"] if l["status"] == "CLAIMED" and l["claimed_by"] == staff_id]
-        return {"shifts": mine, "claims": claims}
+        weeks = [{"week_start": k, "hours": h} for k, h in sorted(week_hours(staff_id).items())]
+        return {"shifts": mine, "claims": claims, "weeks": weeks}
 
 
 @app.get("/api/listings/open")
@@ -128,7 +144,10 @@ def open_listings(viewer_id: str):
                 continue
             s = get_shift(l["shift_id"])
             vs = check_claim(viewer, s, l["poster_id"], shifts_of(viewer_id))
-            out.append({**listing_view(l), "can_claim": not vs, "reasons": vs})
+            wk = week_start(s).date().isoformat()
+            now = week_hours(viewer_id).get(wk, 0)
+            out.append({**listing_view(l), "can_claim": not vs, "reasons": vs, "week_start": wk,
+                        "hours_now": now, "hours_after": now + duration(s).total_seconds() / 3600})
         return sorted(out, key=lambda x: x["shift"]["start"])
 
 
@@ -247,3 +266,35 @@ def reject(lid: str, body: ActorBody):
         l["status"], l["claimed_by"] = "OPEN", None
         succeed(actor, A, l["shift_id"], lid, f"Claim by {who} rejected; listing back to OPEN")
         return listing_view(l)
+
+
+class PersonBody(BaseModel):
+    actor_id: str
+    name: str
+    role: str
+    certifications: list[str] = []
+
+
+@app.post("/api/staff", status_code=201)
+def add_person(body: PersonBody):
+    with LOCK:
+        actor, A = get_actor(body.actor_id), "ADD_PERSON"
+        name = " ".join(body.name.split())
+        role = body.role.upper()
+        certs = []
+        for c in body.certifications:
+            c = c.strip().upper()
+            if c and c not in certs:
+                certs.append(c)
+        if actor["role"] != "MANAGER":
+            refuse(actor, A, None, None, "Only managers can add people", 403, "FORBIDDEN")
+        if not name or len(name) > 60:
+            refuse(actor, A, None, None, "Name is required (60 characters at most)", 422, "INVALID")
+        if role not in ("STAFF", "MANAGER"):
+            refuse(actor, A, None, None, "Role must be STAFF or MANAGER", 422, "INVALID")
+        if any(p["name"].lower() == name.lower() for p in S["staff"]):
+            refuse(actor, A, None, None, f"A person named '{name}' already exists", 409, "DUPLICATE")
+        p = {"id": new_person_id(role), "name": name, "role": role, "certifications": certs if role == "STAFF" else []}
+        S["staff"].append(p)
+        succeed(actor, A, None, None, f"Added {name} as {role}")
+        return p

@@ -18,6 +18,7 @@ const post = (path, body) => req(path, { method: "POST", body: JSON.stringify(bo
 
 export const api = {
   staff: () => req("/api/staff"),
+  addPerson: (actor_id, name, role, certifications) => post("/api/staff", { actor_id, name, role, certifications }),
   me: (id) => req(`/api/me/${id}`),
   open: (id) => req(`/api/listings/open?viewer_id=${id}`),
   claimed: (id) => req(`/api/listings/claimed?viewer_id=${id}`),
