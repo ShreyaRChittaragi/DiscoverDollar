@@ -298,3 +298,16 @@ def add_person(body: PersonBody):
         S["staff"].append(p)
         succeed(actor, A, None, None, f"Added {name} as {role}")
         return p
+
+
+@app.post("/api/history/clear")
+def clear_history(body: ActorBody):
+    """Manager-only, on explicit request. Leaves one entry recording who cleared it."""
+    with LOCK:
+        actor, A = get_actor(body.actor_id), "CLEAR_HISTORY"
+        if actor["role"] != "MANAGER":
+            refuse(actor, A, None, None, "Only managers can clear the history", 403, "FORBIDDEN")
+        n = len(S["history"])
+        S["history"].clear()
+        succeed(actor, A, None, None, f"Cleared {n} earlier entries")
+        return {"cleared": n}

@@ -23,6 +23,7 @@ export const api = {
   open: (id) => req(`/api/listings/open?viewer_id=${id}`),
   claimed: (id) => req(`/api/listings/claimed?viewer_id=${id}`),
   history: () => req("/api/history"),
+  clearHistory: (actor_id) => post("/api/history/clear", { actor_id }),
   post: (actor_id, shift_id) => post("/api/listings", { actor_id, shift_id }),
   withdraw: (actor_id, lid) => post(`/api/listings/${lid}/withdraw`, { actor_id }),
   claim: (actor_id, lid) => post(`/api/listings/${lid}/claim`, { actor_id }),

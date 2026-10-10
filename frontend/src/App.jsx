@@ -100,12 +100,12 @@ function People({ staff, onAdd }) {
   );
 }
 
-function History({ items }) {
+function History({ items, onClear }) {
   const [f, setF] = useState("all");
   const rows = f === "refused" ? items.filter((h) => h.outcome === "REFUSED") : items;
   return (
     <Card id="history" title="Action history" count={rows.length} unit="actions" tone="purple"
-      right={<div className="tools"><button className="ghost sm" onClick={() => exportCsv(rows)} disabled={!rows.length}>Export CSV</button><label className="filter">Filter <select value={f} onChange={(e) => setF(e.target.value)}><option value="all">All actions</option><option value="refused">Refused only</option></select></label></div>}>
+      right={<div className="tools"><button className="ghost sm" onClick={() => exportCsv(rows)} disabled={!rows.length}>Export CSV</button>{onClear && <button className="ghost sm danger" onClick={() => window.confirm("Clear the whole action history? This cannot be undone.") && onClear()} disabled={!items.length}>Clear history</button>}<label className="filter">Filter <select value={f} onChange={(e) => setF(e.target.value)}><option value="all">All actions</option><option value="refused">Refused only</option></select></label></div>}>
       <Tbl head={["Time", "Who", "Action", "Shift", "Outcome", "Details"]} count={rows.length} empty="No actions to show yet.">
         {rows.map((h) => (
           <tr key={h.id}>
@@ -295,7 +295,7 @@ export default function App() {
 
           {isMgr && <People staff={staff} onAdd={addPerson} />}
 
-          <History items={history} />
+          <History items={history} onClear={isMgr ? () => act(() => api.clearHistory(actor.id), "History cleared") : null} />
         </main>
       </div>
     </>

@@ -86,3 +86,4 @@ tr.bad{background:#fff5f4;border-color:#f0b8b4;border-left:3px solid var(--err)}
 td.nw{white-space:normal}}
 @media (max-width:560px){.addform{grid-template-columns:1fr}.filters label,.filters select{width:100%}.tools{width:100%}}
 @media (max-width:380px){.tiles{grid-template-columns:1fr}.tile+.tile{border-left:none;border-top:1px solid var(--line)}}
+button.ghost.danger{color:var(--err);border-color:#f0b8b4}button.ghost.danger:hover:not(:disabled){background:var(--err-w)}
